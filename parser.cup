@@ -1,0 +1,218 @@
+/**
+* Cole Adams
+* CPSC 411
+* Milestone 2
+* February 28th, 2020
+*/
+import java_cup.runtime.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+parser code {:
+	Lexer lexer;
+
+	parser(Lexer lexer) {	this.lexer = lexer; }
+
+	//Error reporting overrides
+	public void report_error(String message, Object info) {
+		Symbol inf = (Symbol) info;
+		String symVal = TokenType.valueOf(sym.terminalNames[inf.sym]).toString();
+		System.err.println("error: syntax error, probably '" + symVal + "' at or near line " + inf.left);
+	}
+
+	public void report_fatal_error(String message, Object info) throws Exception{
+		Symbol inf = (Symbol) info;
+		done_parsing();
+		System.exit(-1);
+	}
+:}
+
+init with {: /* do nothing */:};
+scan with {: return lexer.next_token(); :};
+
+
+/*Reserved word*/
+terminal TRUE, FALSE, BOOL, INT, VOID, IF, ELSE, WHILE, BREAK, RETURN;
+
+/*Operators*/
+terminal ADD, SUB, MULT, DIV, MOD, LT, GT, LE, GE, ASSIGN, EQ, NE, NOT, AND, OR;
+
+/*Other*/
+terminal OPENP, CLOSEP, OPENB, CLOSEB, SEMICOLON, COMMA;
+
+/*Identifier*/
+terminal String ID;
+
+/*String*/
+terminal String STR;
+
+/*Number*/
+terminal String NUM;
+
+non terminal ASTNode s, literal, type;
+non terminal ASTNode globaldeclaration, variabledeclaration, identifier;
+non terminal ASTNode functiondeclaration, formalparameterlist, formalparameter, mainfunctiondeclaration;
+non terminal ASTNode block, blockstatement, statement, statementexpression, primary, argumentlist, functioninvocation;
+non terminal ASTNode postfixexpression, unaryexpression, multiplicativeexpression, addititveexpression;
+non terminal ASTNode relationalexpression, equalityexpression, conditionalandexpression, conditionalorexpression, assignmentexpression;
+non terminal ASTNode assignment, expression;
+
+non terminal List<ASTNode> globaldeclarations, functionheader, functiondeclarator, mainfunctiondeclarator, blockstatements;
+
+//To fix dangling else warning
+precedence left ELSE;
+
+//J-- grammar
+
+s		::= /*empty*/{:RESULT = new ASTNode("program");:} |
+				globaldeclarations:gd {:RESULT = new ASTNode("program", gd);:}
+				;
+
+
+literal	::= NUM:num {:RESULT = new ASTNode("num", num, cur_token.left);:}|
+						STR:str {:RESULT = new ASTNode("string", str, cur_token.left);:}|
+						TRUE {:RESULT = new ASTNode("true");:}|
+						FALSE {:RESULT = new ASTNode("false");:}
+						;
+
+type	::= BOOL {:RESULT = new ASTNode("boolean");:}|
+					INT {:RESULT = new ASTNode("int");:}
+					;
+
+globaldeclarations	::= globaldeclaration:gd {:RESULT = new ArrayList<ASTNode>(Arrays.asList(gd));:} |
+												globaldeclarations:gds globaldeclaration:gd {: gds.add(gd);
+																																			RESULT = gds;:}
+												;
+
+globaldeclaration	::= variabledeclaration:vd {:vd.construct = "globVarDec"; RESULT = vd;:} |
+											functiondeclaration:fd {:RESULT = fd;:} |
+											mainfunctiondeclaration:mfd {:RESULT = mfd;:}
+											;
+
+variabledeclaration ::= type:ty identifier:id SEMICOLON {:RESULT = new ASTNode("varDec", Arrays.asList(ty, id), cur_token.left-1);:}
+												;
+
+identifier ::= ID:id {:RESULT = new ASTNode("id", id, cur_token.left);:}
+								;
+
+functiondeclaration ::= functionheader:fh block:bl {:	fh.add(bl);
+																											int lineno = fh.get(1).lineno;
+																											RESULT = new ASTNode("funcDec", fh, lineno);:}
+												;
+
+functionheader ::= type:ty functiondeclarator:fd {:fd.add(0, ty);
+																										RESULT = fd;:}|
+										VOID functiondeclarator:fd {:fd.add(0, new ASTNode("void"));
+																										RESULT = fd;:}
+										;
+
+functiondeclarator ::= identifier:id OPENP formalparameterlist:fpl CLOSEP {:RESULT = new ArrayList<ASTNode>(Arrays.asList(id, fpl));:}
+												;
+
+formalparameterlist	::= /*empty*/ {:RESULT = new ASTNode("formals");:} |
+												formalparameter:fp {:RESULT = new ASTNode("formals", fp);:} |
+												formalparameterlist:fpl COMMA formalparameter:fp {:RESULT = fpl.addChild(fp);:}
+												;
+
+formalparameter	::= type:ty identifier:id {:RESULT = new ASTNode("formal", Arrays.asList(ty, id));:}
+										;
+
+mainfunctiondeclaration ::= mainfunctiondeclarator:mfd block:bl {:mfd.add(bl);
+																																	int lineno = mfd.get(1).lineno;
+																																	RESULT=new ASTNode("mainDec", mfd, lineno);:}
+														;
+
+mainfunctiondeclarator ::= identifier:id OPENP formalparameterlist:fpl CLOSEP {:RESULT= new ArrayList<ASTNode>(Arrays.asList(new ASTNode("void"), id, fpl));:}
+													;
+
+block	::= OPENB blockstatements:bs CLOSEB {:RESULT = new ASTNode("block", bs);:}|
+					OPENB CLOSEB {:RESULT = new ASTNode("block");:}
+					;
+
+blockstatements	::= blockstatement:bs {:RESULT = new ArrayList<ASTNode>(Arrays.asList(bs));:}|
+										blockstatements:bss blockstatement:bs {:bss.add(bs);
+																														RESULT = bss;:}
+										;
+
+blockstatement ::= variabledeclaration:vd {:RESULT = vd;:} |
+										statement:st {:RESULT = st;:}
+										;
+
+statement	::= block:bl {:RESULT = bl;:}|
+							SEMICOLON {:RESULT = new ASTNode("nullStmt");:} |
+							statementexpression:se SEMICOLON {:RESULT = se;:} |
+							BREAK SEMICOLON {:RESULT = new ASTNode("break", cur_token.left-1);:} |
+							RETURN expression:ex SEMICOLON {:RESULT = new ASTNode("return", ex, cur_token.left-1);:}|
+							RETURN SEMICOLON {:RESULT = new ASTNode("return", cur_token.left-1);:}|
+							IF OPENP expression:ex CLOSEP statement:st {:RESULT = new ASTNode("if", Arrays.asList(ex, st), ex.lineno);:}|
+							IF OPENP expression:ex CLOSEP statement:st1 ELSE statement:st2 {:RESULT = new ASTNode("ifElse", Arrays.asList(ex, st1, st2), ex.lineno);:}|
+							WHILE OPENP expression:ex CLOSEP statement:st {:RESULT = new ASTNode("while", Arrays.asList(ex, st), ex.lineno);:}
+							;
+
+statementexpression ::= assignment:as {:RESULT = new ASTNode("stmtExpr", as);:}|
+												functioninvocation:fi {:RESULT = new ASTNode("stmtExpr", fi);:}
+												;
+
+primary ::= literal:li {:RESULT = li;:}|
+						OPENP expression:ex CLOSEP {:RESULT = ex;:} |
+						functioninvocation:fi {:RESULT = fi;:}
+						;
+
+argumentlist ::= expression:ex {:RESULT = new ASTNode("actuals", ex);:} |
+									argumentlist:al COMMA expression:ex {:RESULT = al.addChild(ex);:}
+									;
+
+functioninvocation ::= identifier:id OPENP argumentlist:al CLOSEP {:RESULT = new ASTNode("funcCall", Arrays.asList(id, al), cur_token.left);:} |
+												identifier:id OPENP CLOSEP {:RESULT = new ASTNode("funcCall", Arrays.asList(id, new ASTNode("actuals")), cur_token.left);:}
+												;
+
+postfixexpression ::= primary:pr {:RESULT = pr;:} |
+											identifier:id {:RESULT = id;:}
+											;
+
+unaryexpression ::= SUB unaryexpression:ue {:RESULT = new ASTNode("-", ue, cur_token.left);:} |
+										NOT unaryexpression:ue {:RESULT = new ASTNode("!", ue, cur_token.left);:} |
+										postfixexpression:pe {:RESULT = pe;:}
+										;
+
+multiplicativeexpression ::= unaryexpression:ue {:RESULT = ue;:} |
+															multiplicativeexpression:me MULT unaryexpression:ue {:RESULT = new ASTNode("*", Arrays.asList(me, ue), cur_token.left);:} |
+															multiplicativeexpression:me DIV unaryexpression:ue {:RESULT = new ASTNode("/", Arrays.asList(me, ue), cur_token.left);:} |
+															multiplicativeexpression:me MOD unaryexpression:ue {:RESULT = new ASTNode("%", Arrays.asList(me, ue), cur_token.left);:}
+															;
+
+addititveexpression ::= multiplicativeexpression:me {:RESULT = me;:} |
+												addititveexpression:ae ADD multiplicativeexpression:me {:RESULT = new ASTNode("+", Arrays.asList(ae, me), cur_token.left);:} |
+												addititveexpression:ae SUB multiplicativeexpression:me {:RESULT = new ASTNode("-", Arrays.asList(ae, me), cur_token.left);:}
+												;
+
+relationalexpression ::= addititveexpression:ae {:RESULT = ae;:} |
+													relationalexpression:re LT addititveexpression:ae {:RESULT = new ASTNode("<", Arrays.asList(re, ae), cur_token.left);:} |
+													relationalexpression:re GT addititveexpression:ae {:RESULT = new ASTNode(">", Arrays.asList(re, ae), cur_token.left);:} |
+													relationalexpression:re LE addititveexpression:ae {:RESULT = new ASTNode("<=", Arrays.asList(re, ae), cur_token.left);:} |
+													relationalexpression:re GE addititveexpression:ae {:RESULT = new ASTNode(">=", Arrays.asList(re, ae), cur_token.left);:}
+													;
+
+equalityexpression ::= relationalexpression:re {:RESULT = re;:} |
+											equalityexpression:ee EQ relationalexpression:re {:RESULT = new ASTNode("==", Arrays.asList(ee, re), cur_token.left);:} |
+											equalityexpression:ee NE relationalexpression:re {:RESULT = new ASTNode("!=", Arrays.asList(ee, re), cur_token.left);:}
+											;
+
+conditionalandexpression ::= equalityexpression:ee {:RESULT = ee;:} |
+															conditionalandexpression:cae AND equalityexpression:ee {:RESULT = new ASTNode("&&", Arrays.asList(cae, ee), cur_token.left);:}
+															;
+
+conditionalorexpression ::= conditionalandexpression:cae {:RESULT = cae;:} |
+														conditionalorexpression:coe OR conditionalandexpression:cae {:RESULT = new ASTNode("||", Arrays.asList(coe, cae), cur_token.left);:}
+														;
+
+assignmentexpression ::= conditionalorexpression:coe {:RESULT = coe;:} |
+													assignment:as {:RESULT = as;:}
+													;
+
+assignment ::= identifier:id ASSIGN assignmentexpression:ae {:RESULT = new ASTNode("=", Arrays.asList(id, ae), cur_token.left);:}
+								;
+
+expression ::= assignmentexpression:ae {:RESULT = ae;:}
+								;
