@@ -1,7 +1,12 @@
 JFLEX=jflex
 
 CUP_CP=./java-cup-11b.jar
-CUP_RUNTIME_CP=./java-cup-11b-runtime.jar
+
+ifeq ($(OS),Windows_NT)
+	CUP_RUNTIME_CP=".;./java-cup-11b-runtime.jar"
+else
+	CUP-CUP_RUNTIME_CP=".:./java-cup-11b-runtime.jar"
+endif
 
 CUP=java -jar ${CUP_CP}
 
@@ -16,6 +21,13 @@ Lexer.java:
 
 parser.java:
 	${CUP} parser.cup
+
+run:
+ifdef file
+	${JAVA} Main ${file}
+else
+	${JAVA} Main
+endif
 
 clean:
 	rm -f *.class

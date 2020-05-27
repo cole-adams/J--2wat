@@ -3,3 +3,4 @@ java-cup-11b.jar
 *.class
 parser.java
 Lexer.java
+sym.java
